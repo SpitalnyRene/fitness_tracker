@@ -577,13 +577,178 @@ function renderDashboard(){
   weightMiniInst=new Chart(ctx,{type:"line",data:{labels:mini.map(w=>fmt(w.date)),datasets:[{data:mini.map(w=>w.kg),borderColor:"#ff6b35",tension:0.3,pointRadius:2,pointBackgroundColor:"#ff6b35",borderWidth:2}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{display:false},x:{ticks:{color:"#6b7280",font:{size:9}},grid:{display:false},axisLine:false}}}});
 }
 
+// ─── Streak ───────────────────────────────────────────────────────────────────
+function calcStreak() {
+  const allDates = new Set([...weightLog.map(e=>e.date),...cardioLog.map(e=>e.date),...gymLog.map(e=>e.date),...nutritionLog.map(e=>e.date)]);
+  let streak=0; let current=new Date(); current.setHours(0,0,0,0);
+  for(let i=0;i<365;i++){
+    const d=current.toISOString().split("T")[0];
+    if(allDates.has(d)){streak++;current.setDate(current.getDate()-1);}
+    else if(i===0){current.setDate(current.getDate()-1);}
+    else break;
+  }
+  return streak;
+}
+function checkAndShowStreak(){
+  const tod=today(); const lastShown=ls("rene_streak_shown","");
+  if(lastShown===tod) return;
+  const allDates=new Set([...cardioLog.map(e=>e.date),...gymLog.map(e=>e.date),...nutritionLog.map(e=>e.date)]);
+  if(!allDates.has(tod)) return;
+  lss("rene_streak_shown",tod);
+  showStreakPopup(calcStreak());
+}
+function showStreakPopup(streak){
+  const popup=document.getElementById("streak-popup");
+  if(!popup) return;
+  document.getElementById("streak-number").textContent=streak;
+  const msgs={1:"Guter Start! Bleib dran 💪",2:"Zwei Tage in Folge! 🎯",3:"3 Tage! Du baust eine Gewohnheit auf 🏆",5:"5 Tage Streak! Stark! 🔥",7:"Eine ganze Woche! Unglaublich! 🌟",14:"Zwei Wochen! Du bist eine Maschine! 🚀",21:"21 Tage! Gewohnheit etabliert! 👑",30:"EIN MONAT! Legende! 🏆🔥"};
+  const thresholds=[30,21,14,7,5,3,2,1];
+  document.getElementById("streak-msg").textContent=msgs[thresholds.find(t=>streak>=t)]||"Weiter so!";
+  document.getElementById("streak-emoji").textContent=streak>=30?"👑":streak>=14?"🚀":streak>=7?"🌟":streak>=3?"🏆":"🔥";
+  popup.style.display="flex";
+}
+function closeStreak(){document.getElementById("streak-popup").style.display="none";}
+
+// ─── Stats ────────────────────────────────────────────────────────────────────
+function renderStats(){
+  const container=document.getElementById("stats-content");
+  if(!container) return;
+  const streak=calcStreak();
+  const totalGymSessions=gymLog.length;
+  const totalCardioMin=cardioLog.reduce((s,c)=>s+c.dauer,0);
+  const totalCardioKcal=cardioLog.reduce((s,c)=>s+c.kcalAktiv,0);
+  const totalGymKcal=gymLog.reduce((s,g)=>s+(g.kcal||0),0);
+  const totalKcalBurned=totalCardioKcal+totalGymKcal;
+  const currentWeight=weightLog.length?weightLog[weightLog.length-1].kg:90;
+  const weightLost=(90-currentWeight).toFixed(2);
+  const minWeight=weightLog.length?Math.min(...weightLog.map(w=>w.kg)):0;
+  const longestCardio=cardioLog.length?Math.max(...cardioLog.map(c=>c.dauer)):0;
+  const longestGym=gymLog.length?Math.max(...gymLog.map(g=>g.dauer)):0;
+  const lowestHF=cardioLog.filter(c=>c.hfAvg>80).length?Math.min(...cardioLog.filter(c=>c.hfAvg>80).map(c=>c.hfAvg)):0;
+  const byDate={};cardioLog.forEach(c=>{byDate[c.date]=(byDate[c.date]||0)+c.kcalAktiv;});
+  const highestKcalDay=Object.values(byDate).length?Math.max(...Object.values(byDate)):0;
+  const allDates=new Set([...cardioLog.map(e=>e.date),...gymLog.map(e=>e.date),...nutritionLog.map(e=>e.date)]);
+  const daysActive=allDates.size;
+  const planCount={};gymLog.forEach(g=>{planCount[g.plan]=(planCount[g.plan]||0)+1;});
+  const daysLeft=Math.round((new Date("2027-06-01")-new Date())/86400000);
+
+  container.innerHTML=`
+    <div class="card" style="background:linear-gradient(135deg,#1a0800,#2a1000);border-color:#3a2000;text-align:center;margin-bottom:14px;cursor:pointer" onclick="showStreakPopup(${streak})">
+      <div style="font-size:48px;margin-bottom:8px">${streak>=30?"👑":streak>=14?"🚀":streak>=7?"🌟":streak>=3?"🏆":"🔥"}</div>
+      <div style="font-size:56px;font-weight:900;color:var(--accent);line-height:1">${streak}</div>
+      <div style="font-size:14px;color:var(--muted);margin-top:4px;letter-spacing:2px">TAGE STREAK</div>
+      <div style="font-size:11px;color:#555;margin-top:6px">Tippe um zu feiern 🎉</div>
+    </div>
+    <div class="label" style="margin-bottom:8px">Übersicht</div>
+    <div class="grid2" style="margin-bottom:14px">
+      <div class="card" style="text-align:center"><div style="font-size:32px;font-weight:800;color:var(--purple)">${totalGymSessions}</div><div style="font-size:11px;color:var(--muted)">Gym Sessions</div></div>
+      <div class="card" style="text-align:center"><div style="font-size:32px;font-weight:800;color:var(--blue)">${cardioLog.length}</div><div style="font-size:11px;color:var(--muted)">Cardio Sessions</div></div>
+      <div class="card" style="text-align:center"><div style="font-size:32px;font-weight:800;color:var(--green)">${daysActive}</div><div style="font-size:11px;color:var(--muted)">Aktive Tage</div></div>
+      <div class="card" style="text-align:center"><div style="font-size:32px;font-weight:800;color:var(--accent)">${Math.round(totalCardioMin/60)}h</div><div style="font-size:11px;color:var(--muted)">Cardio Gesamt</div></div>
+    </div>
+    <div class="label" style="margin-bottom:8px">Gewicht</div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="grid3">
+        <div style="text-align:center"><div style="font-size:24px;font-weight:700;color:var(--green)">-${weightLost}</div><div style="font-size:10px;color:var(--muted)">kg verloren</div></div>
+        <div style="text-align:center"><div style="font-size:24px;font-weight:700;color:var(--accent)">${currentWeight}</div><div style="font-size:10px;color:var(--muted)">aktuell</div></div>
+        <div style="text-align:center"><div style="font-size:24px;font-weight:700;color:var(--blue)">${minWeight}</div><div style="font-size:10px;color:var(--muted)">Tiefstwert</div></div>
+      </div>
+      <div style="margin-top:12px;background:var(--border);border-radius:99px;height:6px">
+        <div style="width:${Math.min(100,((90-currentWeight)/(90-78))*100)}%;height:100%;background:linear-gradient(90deg,var(--green),#86efac);border-radius:99px"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:4px;font-size:10px;color:var(--muted)"><span>Start: 90 kg</span><span>Ziel: ~78 kg</span></div>
+    </div>
+    <div class="label" style="margin-bottom:8px">Persönliche Rekorde</div>
+    <div class="card" style="margin-bottom:14px">
+      ${[["🔥 Meiste kcal an einem Tag",highestKcalDay+" kcal","var(--accent)"],["⏱ Längste Cardio Session",longestCardio+" min","var(--blue)"],["💪 Längste Gym Session",longestGym+" min","var(--purple)"],["❤️ Niedrigster HF Ø",lowestHF+" BPM","var(--green)"],["🔥 Gesamt kcal verbrannt",totalKcalBurned+" kcal","var(--accent)"]].map(([l,v,c])=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--muted)">${l}</span><span style="font-weight:700;color:${c}">${v}</span></div>`).join("")}
+    </div>
+    <div class="label" style="margin-bottom:8px">Trainingsverteilung</div>
+    <div class="card" style="margin-bottom:14px">
+      ${Object.entries(planCount).map(([plan,count])=>`<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px">${plan}</span><span style="font-size:12px;font-weight:700;color:var(--purple)">${count}x</span></div><div style="background:var(--border);border-radius:99px;height:4px"><div style="width:${Math.min(100,(count/totalGymSessions)*100)}%;height:100%;background:var(--purple);border-radius:99px"></div></div></div>`).join("")}
+    </div>
+    <div class="card" style="background:linear-gradient(135deg,#0a1a0a,#0f2a0f);border-color:#1a3a1a;text-align:center;margin-bottom:14px">
+      <div style="font-size:11px;color:var(--green);letter-spacing:2px;margin-bottom:8px">ZIEL: SOMMER 2027</div>
+      <div style="font-size:13px;color:var(--muted)">Noch <span style="color:var(--green);font-weight:700">${daysLeft} Tage</span> bis Sixpack-Season</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:6px">Noch <span style="color:var(--accent);font-weight:700">${(currentWeight-78).toFixed(1)} kg</span> bis Zielgewicht</div>
+    </div>`;
+}
+
+// ─── Voice Input ──────────────────────────────────────────────────────────────
+let recognition=null; let isListening=false;
+function initVoice(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR) return null;
+  const r=new SR(); r.lang="de-DE"; r.continuous=false; r.interimResults=true; r.maxAlternatives=1;
+  r.onstart=()=>{isListening=true;const btn=document.getElementById("mic-btn");if(btn){btn.style.background="var(--danger)";btn.style.color="#fff";btn.style.borderColor="var(--danger)";btn.textContent="⏹";}document.getElementById("chat-input").placeholder="Spreche jetzt...";};
+  r.onresult=(e)=>{let t="";for(let i=e.resultIndex;i<e.results.length;i++){t+=e.results[i][0].transcript;}document.getElementById("chat-input").value=t;if(e.results[e.results.length-1].isFinal){stopVoice();setTimeout(()=>sendChat(),300);}};
+  r.onerror=(e)=>{stopVoice();if(e.error==="not-allowed"){addChatMessage("assistant","Mikrofon-Zugriff verweigert. Bitte in Safari Einstellungen erlauben.");}};
+  r.onend=()=>{stopVoice();};
+  return r;
+}
+function stopVoice(){isListening=false;const btn=document.getElementById("mic-btn");if(btn){btn.style.background="#1a1a2a";btn.style.color="var(--muted)";btn.style.borderColor="var(--border)";btn.textContent="🎤";}document.getElementById("chat-input").placeholder="Tippen oder Mikrofon nutzen...";}
+function toggleVoice(){if(isListening){stopVoice();return;}if(!recognition)recognition=initVoice();if(!recognition){addChatMessage("assistant","Spracheingabe wird von Safari auf iPhone unterstützt.");return;}try{recognition.start();}catch(e){stopVoice();}}
+
+// ─── AI Chat ──────────────────────────────────────────────────────────────────
+let chatHistory=[];
+function addChatMessage(role,text,isAction=false){
+  const container=document.getElementById("chat-messages");
+  if(!container) return;
+  const div=document.createElement("div");
+  div.style.cssText=role==="user"?"align-self:flex-end;background:var(--purple);color:#fff;padding:10px 14px;border-radius:16px 16px 4px 16px;max-width:85%;font-size:13px;line-height:1.5":isAction?"align-self:flex-start;background:#0f2a1a;border:1px solid var(--green);color:var(--green);padding:10px 14px;border-radius:16px 16px 16px 4px;max-width:85%;font-size:12px;line-height:1.5":"align-self:flex-start;background:#1a1a2a;border:1px solid var(--border);color:var(--text);padding:10px 14px;border-radius:16px 16px 16px 4px;max-width:85%;font-size:13px;line-height:1.5";
+  div.textContent=text; container.appendChild(div); container.scrollTop=container.scrollHeight;
+}
+function addLoadingMessage(){const container=document.getElementById("chat-messages");const div=document.createElement("div");div.id="chat-loading";div.style.cssText="align-self:flex-start;background:#1a1a2a;border:1px solid var(--border);color:var(--muted);padding:10px 14px;border-radius:16px 16px 16px 4px;font-size:13px";div.textContent="Denke nach...";container.appendChild(div);container.scrollTop=container.scrollHeight;}
+function removeLoadingMessage(){const el=document.getElementById("chat-loading");if(el)el.remove();}
+async function sendChat(){
+  const input=document.getElementById("chat-input"); const msg=input.value.trim(); if(!msg) return;
+  input.value=""; addChatMessage("user",msg); chatHistory.push({role:"user",content:msg}); addLoadingMessage();
+  const tod=today();
+  const todNutrition=nutritionLog.filter(n=>n.date===tod);
+  const todCardio=cardioLog.filter(c=>c.date===tod);
+  const todGym=gymLog.filter(g=>g.date===tod);
+  const todKcal=todNutrition.reduce((s,n)=>s+n.kcal,0);
+  const todProtein=todNutrition.reduce((s,n)=>s+n.protein,0);
+  const latestWeight=weightLog.length?weightLog[weightLog.length-1].kg:87;
+  const systemPrompt=`Du bist ein persönlicher Fitness-Assistent für René.
+AKTUELLER STATUS HEUTE (${tod}):
+- Gewicht: ${latestWeight} kg (Ziel: ~78 kg)
+- Kalorien gegessen: ${todKcal} / 1700 kcal Ziel
+- Protein: ${todProtein} / 200g Ziel
+- Cardio heute: ${todCardio.length} Sessions (${todCardio.reduce((s,c)=>s+c.dauer,0)} min)
+- Gym heute: ${todGym.length>0?todGym[0].plan:"noch nicht"}
+TRAININGSPLAN: Mo=Brust/Bizeps/Core, Di=Rücken/Trizeps/Schultern, Do=Brust/Bizeps/Core, Fr=Beine/Schultern
+Wenn Essen oder Training beschrieben wird, antworte kurz und füge am Ende hinzu:
+EINTRAG_JSON:{"type":"nutrition","name":"Name","kcal":123,"protein":45,"carbs":10,"fat":5}
+oder EINTRAG_JSON:{"type":"cardio","cardioType":"Fahrrad","dauer":45,"hfAvg":128,"hfMax":140,"kcalAktiv":220}
+oder EINTRAG_JSON:{"type":"gym","plan":"Montag: Brust, Bizeps & Core","dauer":60,"hfAvg":106,"hfMax":145,"kcal":200}
+oder EINTRAG_JSON:{"type":"weight","kg":86.5}
+Antworte auf Deutsch, kurz und freundlich.`;
+  try{
+    const response=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,system:systemPrompt,messages:chatHistory})});
+    const data=await response.json(); removeLoadingMessage();
+    if(data.content&&data.content[0]){
+      const fullText=data.content[0].text;
+      const jsonMatch=fullText.match(/EINTRAG_JSON:({.*})/);
+      const displayText=fullText.replace(/EINTRAG_JSON:{.*}/,"").trim();
+      addChatMessage("assistant",displayText); chatHistory.push({role:"assistant",content:fullText});
+      if(jsonMatch){try{
+        const action=JSON.parse(jsonMatch[1]);
+        if(action.type==="nutrition"){nutritionLog.push({date:tod,name:action.name,kcal:action.kcal||0,protein:action.protein||0,carbs:action.carbs||0,fat:action.fat||0});lss("rene_nutrition",nutritionLog);addChatMessage("system",`✓ Eingetragen: ${action.name} · ${action.kcal} kcal · ${action.protein}g Protein`,true);renderNutrition();checkAndShowStreak();}
+        else if(action.type==="cardio"){cardioLog.push({date:tod,type:action.cardioType||"Fahrrad",dauer:action.dauer||0,hfAvg:action.hfAvg||0,hfMax:action.hfMax||0,kcalAktiv:action.kcalAktiv||0});lss("rene_cardio",cardioLog);addChatMessage("system",`✓ Cardio: ${action.dauer} min · ${action.kcalAktiv} kcal`,true);renderCardio();checkAndShowStreak();}
+        else if(action.type==="gym"){gymLog.push({date:tod,plan:action.plan||"",dauer:action.dauer||0,hfAvg:action.hfAvg||0,hfMax:action.hfMax||0,kcal:action.kcal||0});lss("rene_gym",gymLog);addChatMessage("system",`✓ Gym: ${action.plan} · ${action.dauer} min`,true);renderGym();checkAndShowStreak();}
+        else if(action.type==="weight"){weightLog.push({date:tod,kg:action.kg});weightLog.sort((a,b)=>a.date.localeCompare(b.date));lss("rene_weight",weightLog);addChatMessage("system",`✓ Gewicht: ${action.kg} kg`,true);renderWeight();}
+        renderDashboard();
+      }catch(e){console.error(e);}}
+    }else{addChatMessage("assistant","Sorry, da ist was schiefgelaufen!");}
+  }catch(e){removeLoadingMessage();addChatMessage("assistant","Verbindungsfehler. Prüfe deine Internetverbindung.");}
+}
+
 // ─── Init ─────────────────────────────────────────────────────────────
 document.getElementById("w-date").value=today();
 document.getElementById("g-date").value=today();
 document.getElementById("c-date").value=today();
 document.getElementById("e-date").value=today();
 renderDashboard();
-// Pre-render stats so it's ready
 renderStats();
 // Auto-refresh BMR every 5 minutes
 setInterval(()=>{if(document.getElementById("tab-dashboard").classList.contains("active")){renderDashboard();}},300000);
